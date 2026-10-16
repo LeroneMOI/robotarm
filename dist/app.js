@@ -70,14 +70,14 @@ function grip(index){
  const a=arms[index],result=toggleGripper(a,blocks,collisionWorld);
  if(!result.ok){if(result.event)contact(a,result.event);else toast(result.reason);updatePanel();return result;}
  if(result.opening){score();if(!demo?.active)toast('夹爪开启 · 物品落下');}
- else if(result.item){if(!demo?.active)toast((index?'左臂':'右臂')+'已抓取'+result.item.label);}
+ else if(result.item){if(!demo?.active)toast((index?'左臂':'右臂')+'正在闭合夹爪 · '+result.item.label);}
  else if(!demo?.active)toast('夹爪已闭合 · 对齐物品后重新抓取');
  updatePanel();return result;
 }
 let nextGraspUI=0,lastGraspArm=-1;
 function updateGraspUI(){
  const now=performance.now();if(now<nextGraspUI&&lastGraspArm===active)return;nextGraspUI=now+250;lastGraspArm=active;
- const a=arms[active],el=$('#grasp-status');if(a.held){el.textContent='双指辅助夹持 · 保持物品当前姿态';el.classList.add('grasp-ready');return;}
+ const a=arms[active],el=$('#grasp-status');if(a.held){el.textContent=a.grasp?.centeringBlocked?'夹指推动受阻 · 已停止闭合，可松开调整':a.grasp?.closing?'夹爪正在闭合 · 接触后将物品推向两指中央':'双指辅助夹持 · 保持物品当前姿态';el.classList.toggle('grasp-ready',!a.grasp?.centeringBlocked);return;}
  const item=blocks.filter(b=>!arms.some(other=>other.held===b)).sort((x,y)=>x.mesh.position.distanceToSquared(a.actual)-y.mesh.position.distanceToSquared(a.actual))[0];
  if(!item){el.textContent='抓取与碰撞共用接触网格 · 请靠近物品';el.classList.remove('grasp-ready');return;}
  const status=collisionWorld.inspectGrasp(a,item);el.textContent=item.label+' · '+status.message;el.classList.toggle('grasp-ready',status.ready);

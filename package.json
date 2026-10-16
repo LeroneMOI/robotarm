@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node server.mjs",
     "check": "node --check server.mjs && node --check dist/app.js",
-    "test": "node tests/unified-contact.test.mjs && node tests/oriented-grasp.test.mjs"
+    "test": "node tests/unified-contact.test.mjs && node tests/oriented-grasp.test.mjs && node tests/centering.test.mjs"
   },
   "engines": {
     "node": ">=18"

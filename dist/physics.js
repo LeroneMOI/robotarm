@@ -115,6 +115,7 @@ export class PhysicsWorld{
  }
  step(dt,onContact=()=>{}){
   if(!this.enabled||dt<=0)return;
+  this.collision.advanceGrasps(dt,onContact);
   for(const entry of this.objects.values())entry.releaseRemaining=Math.max(0,(entry.releaseRemaining||0)-dt);
   this.syncAttachments();this.accumulator=Math.min(this.accumulator+dt,.1);
   // Interpolate robot poses over the physics substeps, rather than teleporting each collider.

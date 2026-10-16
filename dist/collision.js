@@ -1,3 +1,4 @@
+import {updateGripper,applyAngles} from './robot-model.js';
 import {contactMeshes} from './contact-geometry.js';
 import {inspectGraspGeometry} from './grasp-geometry.js';
 import * as T from './vendor/three.module.js';
@@ -106,7 +107,32 @@ export class CollisionWorld{
     for(const arm of this.arms)for(const part of this.parts.get(arm))if(overlap(object,part))return {label:arm.index?'左臂':'右臂',arm};
     return null;
   }
+  advanceGrasps(dt,onContact=()=>{}){
+    if(dt<=0)return;
+    // Fixed spatial microsteps keep a closing jaw from tunnelling through obstacles.
+    for(const a of this.arms){
+      if(!a.held||!a.grasp?.closing)continue;
+      const grasp=a.grasp,c=grasp.closing,budget=Math.min(dt,.1)*.65;
+      let remaining=budget;
+      while(remaining>1e-9&&grasp.closing){
+        const before=grasp.opening,position=grasp.position.clone(),next=Math.max(c.targetOpening,before-Math.min(.002,remaining));
+        remaining-=before-next;grasp.opening=next;
+        const push=Math.sign(c.center)*Math.min(Math.abs(c.center),Math.max(0,(c.contactOpening-next)/2));
+        grasp.position.copy(c.start);grasp.position.x-=push/c.scale;
+        updateGripper(a);applyAngles(a);followHeld(a);
+        const hit=this.check(a);
+        if(hit){
+          grasp.opening=before;grasp.position.copy(position);grasp.closing=null;grasp.centeringBlocked=true;
+          updateGripper(a);applyAngles(a);followHeld(a);a.target.copy(a.actual);
+          onContact(a,{...hit,detail:'夹指推动物品受阻，已停止闭合'});break;
+        }
+        a.target.copy(a.actual);
+        if(next<=c.targetOpening+1e-9)grasp.closing=null;
+      }
+    }
+  }
   advanceObjects(dt,onContact=()=>{}){
+    this.advanceGrasps(dt,onContact);
     const count=Math.max(1,Math.ceil(dt/(1/240))),step=dt/count;
     for(let sub=0;sub<count;sub++)for(const block of this.blocks){
       if(this.arms.some(a=>a.held===block))continue;

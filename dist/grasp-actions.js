@@ -10,11 +10,17 @@ export function toggleGripper(a,items,world){
  if(chosen&&!chosen.grasp.fits)return {ok:false,reason:'当前朝向下物品宽度超出夹爪开口，请调整夹爪方向'};
  const saved={angles:[...a.angles],target:a.target.clone(),closed:a.closed,held:a.held,grasp:a.grasp};
  const oldObject=candidate?{position:candidate.mesh.position.clone(),quaternion:candidate.mesh.quaternion.clone()}:null;
+ const initialOpening=a.gripper.opening;
  a.closed=!opening;a.held=opening?null:candidate;a.grasp=candidate?{item:candidate,opening:chosen.grasp.opening}:null;
  // Closing changes the fingers/TCP only. Never solve a new arm pose or move
  // the payload to a preset centre just to make a grasp succeed.
  updateGripper(a);applyAngles(a);a.target.copy(a.actual);
- if(candidate)a.grasp=bindGrasp(a,candidate,chosen.grasp.opening);
+  if(candidate){
+  a.grasp=bindGrasp(a,candidate,initialOpening);
+  const scale=a.hand.getWorldScale(a.hand.position.clone()).x;
+  a.grasp.closing={start:a.grasp.position.clone(),center:chosen.grasp.center,scale,contactOpening:chosen.grasp.opening,targetOpening:Math.max(a.gripper.minOpening||.001,chosen.grasp.width+.0006)};
+  updateGripper(a);applyAngles(a);a.target.copy(a.actual);
+ }
  followHeld(a);
  const hit=world.check(a);
  if(hit){
