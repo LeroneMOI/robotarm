@@ -9,7 +9,7 @@ function hull2(points){
  const unique=new Map();points.forEach(p=>unique.set(p.x.toFixed(6)+','+p.z.toFixed(6),[p.x,p.z]));const list=[...unique.values()].sort((a,b)=>a[0]-b[0]||a[1]-b[1]);if(list.length<3)return [];
  const cross=(a,b,c)=>(b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]),lower=[],upper=[];
  for(const p of list){while(lower.length>=2&&cross(lower.at(-2),lower.at(-1),p)<=1e-10)lower.pop();lower.push(p);}
- for(const p of list.toReversed()){while(upper.length>=2&&cross(upper.at(-2),upper.at(-1),p)<=1e-10)upper.pop();upper.push(p);}lower.pop();upper.pop();return lower.concat(upper);
+ for(const p of list.slice().reverse()){while(upper.length>=2&&cross(upper.at(-2),upper.at(-1),p)<=1e-10)upper.pop();upper.push(p);}lower.pop();upper.pop();return lower.concat(upper);
 }
 function outline(points,count=32){
  const lines=Array.from({length:count},(_,i)=>{const angle=i*Math.PI*2/count,x=Math.cos(angle),z=Math.sin(angle);return {x,z,h:Math.max(...points.map(p=>p[0]*x+p[1]*z))};}),result=[];

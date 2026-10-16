@@ -3,9 +3,10 @@ import https from 'node:https';
 
 export function proxyRender(req, res, target) {
   const route = req.url.slice('/api/render'.length);
+  const pathname = new URL(route, 'http://localhost').pathname;
   const allowed = req.method === 'GET'
-    ? /^\/(?:health|(?:jobs|streams)\/[0-9a-f]{32}(?:\/output\.mp4|\/chunks\/\d{6}\.mp4)?)$/.test(route)
-    : req.method === 'POST' && /^\/(?:uploads\/mp4|jobs|streams|streams\/[0-9a-f]{32}\/(?:frames\/\d{6}|finish|cancel))$/.test(route);
+    ? /^\/(?:health|(?:jobs|streams)\/[0-9a-f]{32}(?:\/output\.mp4|\/chunks\/\d{6}\.mp4|\/frames(?:\/\d{6}\.(?:png|jpg))?)?)$/.test(pathname)
+    : req.method === 'POST' && /^\/(?:uploads\/mp4|jobs|streams|streams\/[0-9a-f]{32}\/(?:frames\/\d{6}|finish|cancel))$/.test(pathname);
   const fail = (status, message) => {
     if (res.destroyed) return;
     if (res.headersSent) { res.destroy(); return; }

@@ -1,3 +1,5 @@
+import { streamComparison } from './stream-comparison.js';
+import { FramePlayer } from './frame-player.js';
 export function resolveRenderApi(moduleURL) {
   return new URL('./api/render', moduleURL).pathname;
 }
@@ -30,11 +32,12 @@ export function installBackendRendering() {
   const enabled = $('backend-enabled'), kind = $('backend-kind'), variant = $('backend-variant');
   const prompt = $('backend-prompt'), status = $('backend-status'), retry = $('backend-retry');
   const player = $('backend-video'), chunks = $('backend-chunk'), download = $('backend-download');
-  let collection = 'jobs', generation = 0;
+  let collection = 'jobs', generation = 0, framePlayback = null, frameMode = false;
+  const canvas = $('backend-canvas');
   let busy = false, last = null, job = null, listed = new Set(), playingChunk = false;
   let nextChunk = 0, completed = false, consecutiveErrors = 0;
   const message = text => { status.textContent = text; };
-  const settings = () => ({ enabled: enabled.checked, kind: kind.value, variant: variant.value, prompt: prompt.value.trim() });
+  const settings = () => ({ enabled: enabled.checked, kind: kind.value, variant: variant.value, prompt: prompt.value.trim(), releaseAfterUpload: !!$('stream-release-upload')?.checked });
   const stateNames = { queued: '排队中', running: '处理中', loading: '加载模型', warming_up: '模型热身', waiting_input: '等待输入帧', encoding_output: '封装完整视频', rendering: '生成视频', completed: '生成完成', failed: '生成失败' };
   function playChunk(index, autoplay = false) {
     const option = chunks.options[index];
@@ -63,7 +66,7 @@ export function installBackendRendering() {
   $('backend-check').onclick = async () => {
     try {
       const health = await renderRequest('/health');
-      message(`已连接 ${health.backend} · ${health.gpus} 张卡 · 接口在线，模型推理尚需任务验证`);
+      message(`已连接 ${health.backend} · ${health.gpus} 张卡 · ${health.resident ? (health.resident.status === 'ready' ? '模型常驻就绪' : health.resident.status) : '接口在线'}`);
     } catch (error) { message(error.message); }
   };
   async function poll(expected = generation) {
@@ -83,11 +86,14 @@ export function installBackendRendering() {
       if (chunks.options.length && !player.getAttribute('src')) playChunk(0);
       else if (playingChunk && player.ended && nextChunk < chunks.options.length) playChunk(nextChunk, true);
       const progress = state.progress || {};
-      message(`${stateNames[progress.status] || stateNames[state.status] || state.status}${progress.total_frames ? ` · ${progress.delivered_frames || 0}/${progress.total_frames} 帧` : ''} · 已返回 ${chunks.options.length} 块`);
+      message(`${stateNames[progress.status] || stateNames[state.status] || state.status}${progress.total_frames ? ` · ${progress.delivered_frames || 0}/${progress.total_frames} 帧` : ''} · ${frameMode ? `已生成 ${progress.delivered_frames || 0} 帧，已播放 ${framePlayback?.played || 0} 帧` : `已返回 ${chunks.options.length} 块`}`);
       if (['cancelled', 'canceled'].includes(state.status)) { busy = false; message('流式会话已取消'); return; }
       if (state.status === 'failed') {
         terminal = true;
         throw Error(state.error || progress.error || `后端任务失败（退出码 ${state.returncode ?? '未知'}），请检查 worker.log`);
+      }
+      if (state.status === 'completed' && frameMode) {
+        completed = true; busy = false; message(`生成完成：${state.progress?.delivered_frames || state.received_frames} 帧，按5 FPS顺序播放`); return;
       }
       if (state.status === 'completed') {
         completed = true; busy = false; download.hidden = false; $('backend-full').hidden = false;
@@ -102,10 +108,11 @@ export function installBackendRendering() {
         busy = false; retry.hidden = collection !== 'jobs'; return;
       }
     }
-    setTimeout(() => poll(expected), 2000);
+    setTimeout(() => poll(expected), frameMode ? 500 : 2000);
   }
   async function submit(files, options) {
     if (busy) { message('已有渲染任务，本次录制视频已保留在本地，请稍后重试提交'); return; }
+    framePlayback?.stop(); framePlayback = null; frameMode = false; canvas.hidden = true;
     generation++; collection = 'jobs'; last = { files, options }; busy = true; job = null; listed = new Set();
     completed = false; consecutiveErrors = 0; nextChunk = 0; playingChunk = false;
     retry.hidden = true; download.hidden = true; $('backend-full').hidden = true;
@@ -129,6 +136,7 @@ export function installBackendRendering() {
   }
   async function openStream(options) {
     if (busy) throw Error('已有后端任务，请等待完成');
+    framePlayback?.stop(); framePlayback = null; frameMode = false; canvas.hidden = true;
     generation++; busy = true; collection = 'streams'; completed = false; listed = new Set();
     consecutiveErrors = 0; nextChunk = 0; playingChunk = false; job = null;
     retry.hidden = true; download.hidden = true; $('backend-full').hidden = true;
@@ -137,16 +145,22 @@ export function installBackendRendering() {
     try {
       const health = await renderRequest('/health');
       if (!health.stream_input) throw Error('后端尚未启用流式输入，请更新并重启服务');
+      if (health.resident && !['ready','busy'].includes(health.resident.status)) throw Error('后端模型正在预加载，请稍后开始');
+      frameMode = !!health.frame_output;
+      if (frameMode) streamComparison.reset(options.kind, !!options.releaseAfterUpload);
       const inputFps = options.inputFps ?? 5;
       if (!(health.supported_input_fps || [health.fps]).includes(inputFps)) throw Error('后端尚未支持 5 FPS 输入，请更新并重启后端');
-      const result = await renderRequest('/streams', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ control_kind: options.kind, variant: options.variant, prompt: options.prompt, input_fps: inputFps }) });
+      const inputFormat = options.kind === 'depth' && health.supported_input_formats?.includes('gray8') ? 'gray8' : 'rgb24';
+      const result = await renderRequest('/streams', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ control_kind: options.kind, variant: options.variant, prompt: options.prompt || '', input_fps: inputFps, input_format: inputFormat, ...(frameMode ? { output_mode: 'frames', frame_format: 'jpeg', save_mp4: false } : {}) }) });
       if (!/^[0-9a-f]{32}$/.test(result.id)) throw Error('无效会话 ID');
-      job = result.id; poll(); return result;
+      job = result.id;
+      if (frameMode) framePlayback = new FramePlayer(canvas, API, job, renderRequest, error => { message(error.message); });
+      poll(); return result;
     } catch (error) { busy = false; message(error.message); throw error; }
   }
   const pushStream = (sequence, body) => renderRequest(`/streams/${job}/frames/${String(sequence).padStart(6, '0')}`, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body });
   const finishStream = () => renderRequest(`/streams/${job}/finish`, { method: 'POST', body: '{}' });
-  const cancelStream = async () => { const id = job; generation++; busy = false; return renderRequest(`/streams/${id}/cancel`, { method: 'POST', body: '{}' }); };
+  const cancelStream = async () => { const id = job; framePlayback?.stop(); generation++; busy = false; return renderRequest(`/streams/${id}/cancel`, { method: 'POST', body: '{}' }); };
   retry.onclick = () => { if (last) submit(last.files, last.options); };
   return { settings, submit, openStream, pushStream, finishStream, cancelStream, isBusy: () => busy };
 }

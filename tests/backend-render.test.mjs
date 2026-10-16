@@ -34,6 +34,13 @@ test('render API follows the script mount path through a port-forwarding proxy',
   assert.equal(resolveRenderApi('https://work.example/user/demo/proxy/5175/backend-render.js'), '/user/demo/proxy/5175/api/render');
 });
 
+test('upload-release setting defaults off and follows the checkbox', t => {
+  const { controller, get } = setup(t, () => json({}));
+  assert.equal(controller.settings().releaseAfterUpload,false);
+  get('stream-release-upload').checked=true;
+  assert.equal(controller.settings().releaseAfterUpload,true);
+});
+
 test('HTML and plain-text proxy failures report endpoint and status without the npm hint', async t => {
   const original = globalThis.fetch;
   t.after(() => { globalThis.fetch = original; });
@@ -101,6 +108,7 @@ test('live session sends raw chunks before finish without a batch video upload',
   });
   await controller.openStream({ kind: 'depth', variant: 'bf16', prompt: '' });
   assert.equal(JSON.parse(requests.find(r => r.url.endsWith('/streams')).options.body).input_fps, 5);
+  assert.equal(JSON.parse(requests.find(r => r.url.endsWith('/streams')).options.body).input_format, 'rgb24');
   const raw = new Blob(['rgb24']);
   await controller.pushStream(0, raw);
   await flush();
@@ -109,6 +117,16 @@ test('live session sends raw chunks before finish without a batch video upload',
   assert.equal(get('backend-video').src, `${renderAPI}/streams/${id}/chunks/000000.mp4`);
   await controller.finishStream();
   assert.equal(requests.at(-1).url, `${renderAPI}/streams/${id}/finish`);
+});
+
+for (const kind of ['depth', 'canny']) test('input format capability negotiation for ' + kind, async t => {
+  const { controller, requests } = setup(t, url => {
+    if (url.endsWith('/health')) return json({ stream_input: true, supported_input_fps: [5], supported_input_formats: ['rgb24', 'gray8'] });
+    if (url.endsWith('/streams')) return json({ id, input_format: kind === 'depth' ? 'gray8' : 'rgb24' });
+    return json({ status: 'running', chunks: [] });
+  });
+  await controller.openStream({ kind, variant: 'bf16_blocks' });
+  assert.equal(JSON.parse(requests.find(r => r.url.endsWith('/streams')).options.body).input_format, kind === 'depth' ? 'gray8' : 'rgb24');
 });
 
 

@@ -4,10 +4,10 @@ export class StreamSender {
     this.queue = []; this.sequence = 0; this.running = false; this.error = null;
   }
   get full() { return this.queue.length >= 2; }
-  enqueue(frames) {
+  enqueue(frames, onAccepted = () => {}) {
     if (this.error) throw this.error;
     if (this.full) throw Error('流式输入队列已满');
-    this.queue.push({ sequence: this.sequence++, body: new Blob(frames, { type: 'application/octet-stream' }) });
+    this.queue.push({ sequence: this.sequence++, body: new Blob(frames, { type: 'application/octet-stream' }), onAccepted });
     if (!this.running) { this.running = true; this.promise = this.drain(); }
   }
   async drain() {
@@ -21,6 +21,7 @@ export class StreamSender {
             await this.sleep(1000);
           }
         }
+        item.onAccepted();
         this.queue.shift();
       }
     } catch (error) { this.error = error; this.onError(error); }

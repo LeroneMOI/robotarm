@@ -54,3 +54,13 @@
 #backend-status{flex:1;min-width:180px;font-size:12px;line-height:1.65;white-space:pre-wrap;overflow-wrap:anywhere;max-height:110px;overflow:auto;color:var(--text)}
 #stream-status{flex:1;min-width:180px;color:var(--muted);font-size:11px;line-height:1.65}
 @media(max-width:699px){.backend-render{max-height:none;padding:12px}.backend-options{gap:8px}.backend-render select{flex:1;min-width:130px}.backend-render video{max-height:220px}}
+
+/* Reserve comparison space before capture; prevent output from resizing the camera. */
+.stream-comparison{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.stream-comparison figure{margin:0;min-width:0;aspect-ratio:640/420;background:#111}
+.stream-comparison figcaption{font-size:12px;padding:5px;color:#d4d9df}
+.stream-comparison canvas{width:100%;height:auto;aspect-ratio:5/3}
+main:has(.stream-comparison){overflow:auto}
+main:has(.stream-comparison) #viewport{flex:none;width:100%;max-width:960px;aspect-ratio:5/3;height:auto;min-height:0;align-self:center}
+main:has(.stream-comparison) .backend-render{max-height:none;overflow:visible}
+@media(max-width:700px){.stream-comparison{grid-template-columns:1fr}}

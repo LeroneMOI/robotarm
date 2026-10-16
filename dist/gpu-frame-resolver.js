@@ -56,3 +56,46 @@ export class GPUFrameResolver{
  }
  dispose(){this.targets.forEach(t=>t.dispose());this.material.dispose();this.geometry.dispose();this.lookup.dispose();}
 }
+
+const streamFragment = `precision highp float;
+precision highp int;
+uniform sampler2D rgbTex,depthTex;
+uniform int mode;
+out vec4 result;
+vec3 srgb(vec3 x){return mix(12.92*x,1.055*pow(max(x,vec3(0.0)),vec3(1.0/2.4))-.055,step(vec3(.0031308),x));}
+void main(){
+ ivec2 base=ivec2(gl_FragCoord.xy)*2;
+ ivec2 offsets[4]=ivec2[4](ivec2(0,1),ivec2(1,1),ivec2(0,0),ivec2(1,0));
+ vec3 rgb=vec3(0);float gray=0.;
+ for(int k=0;k<4;k++){
+  if(mode==0)rgb+=texelFetch(rgbTex,base+offsets[k],0).rgb;
+  else {vec3 depthBytes=floor(texelFetch(depthTex,base+offsets[k],0).rgb*255.+.5);
+   float d=dot(depthBytes,vec3(65536.,256.,1.))/10000.;
+   gray+=d>0.?255.*(1.-min(d/5.,1.)):0.;}
+ }
+ result=mode==0?vec4(floor(clamp(srgb(rgb/4.),0.,1.)*255.+.5)/255.,1.):vec4(vec3(floor(gray/4.+.5)/255.),1.);
+}`;
+
+// Two readbacks for depth streams, one for Canny. Export resolver stays unchanged.
+export class GPUStreamResolver {
+ constructor(width,height){
+  this.width=width;this.height=height;
+  this.material=new T.RawShaderMaterial({glslVersion:T.GLSL3,
+   uniforms:{rgbTex:{value:null},depthTex:{value:null},mode:{value:0}},
+   vertexShader:'precision highp float; in vec3 position; void main(){gl_Position=vec4(position.xy,0.,1.);}',
+   fragmentShader:streamFragment,depthTest:false,depthWrite:false,toneMapped:false});
+  this.geometry=new T.PlaneGeometry(2,2);this.scene=new T.Scene();this.scene.add(new T.Mesh(this.geometry,this.material));this.camera=new T.Camera();this.targets=new Map();
+ }
+ queue(renderer,rgbTarget,depthTarget,saveDepth){
+  const u=this.material.uniforms;u.rgbTex.value=rgbTarget.texture;u.depthTex.value=depthTarget.texture;
+  const modes=[['rgb',0],...(saveDepth?[['depthPreview',1]]:[])];
+  const pending=modes.map(([key,mode])=>{
+   if(!this.targets.has(key))this.targets.set(key,new T.WebGLRenderTarget(this.width,this.height,{depthBuffer:false,stencilBuffer:false,minFilter:T.NearestFilter,magFilter:T.NearestFilter}));
+   const target=this.targets.get(key);u.mode.value=mode;renderer.setRenderTarget(target);renderer.render(this.scene,this.camera);
+   const bytes=new Uint8Array(this.width*this.height*4);
+   return renderer.readRenderTargetPixelsAsync(target,0,0,this.width,this.height,bytes).then(()=>[key,flipRows(bytes,this.width,this.height)]);
+  });
+  return Promise.all(pending).then(values=>Object.fromEntries(values));
+ }
+ dispose(){this.targets.forEach(t=>t.dispose());this.material.dispose();this.geometry.dispose();}
+}
