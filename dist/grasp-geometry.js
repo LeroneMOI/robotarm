@@ -24,12 +24,11 @@ function sampleGrasp(a,item,position=a.actual,regionOverride=null,compiled=grasp
  if(points){bounds.min.sub(shift);bounds.max.sub(shift);}
  if(!points)return null;
  const width=bounds.max.x-bounds.min.x,center=(bounds.max.x+bounds.min.x)/2;
- // Both jaws must contact: a large off-centre object cannot be acquired by
- // snapping it to the tool, even when its bounding box is nearby.
+ // Assisted grasp: any lateral position inside the jaw envelope is valid.
+ // Keep the payload pose; the nearer pad determines the stopping opening.
  if(width<.001)return null;
- const centerTolerance=Math.min(.012,Math.max(.003,width*.12)),centered=Math.abs(center)<=centerTolerance;
  const opening=2*Math.max(Math.abs(bounds.min.x),Math.abs(bounds.max.x))+.0006;
- return {opening,width,center,bounds,centered,centerTolerance,fits:opening<=a.gripper.maxOpening+.00001};
+ return {opening,width,center,bounds,fits:opening<=a.gripper.maxOpening+.00001};
 }
 // Repository fingers move forward as they close. Evaluate contact at the
 // actual future opening, not just the wide-open finger-tip slab.
@@ -62,10 +61,9 @@ export function bindGrasp(a,item,opening){
 export function inspectGraspGeometry(a,item){
  const distance=item.mesh.getWorldPosition(new T.Vector3()).distanceTo(a.actual);
  if(distance>Math.max(.45,item.halfHeight+.25))return {status:'far',ready:false,item,grasp:null,message:'请靠近物品再抓取'};
- const grasp=measureRaw(a,item),scale=1000/2.8;
+ const grasp=measureRaw(a,item);
  if(!grasp)return {status:'outside',ready:false,item,grasp:null,message:'物品尚未进入两指有效夹持区，请调整高度或前后位置'};
- if(!grasp.centered)return {status:'off_center',ready:false,item,grasp,offset_mm:grasp.center*scale,message:'沿夹爪闭合方向偏心 '+(Math.abs(grasp.center)*scale).toFixed(1)+' mm，请横向对中'};
  if(!grasp.fits)return {status:'too_wide',ready:false,item,grasp,message:'该截面超出夹爪开口，请调整夹持位置或方向'};
  return {status:'ready',ready:true,item,grasp,message:'已进入夹持区，可闭合夹爪'};
 }
-export function measureGrasp(a,item){const result=inspectGraspGeometry(a,item);return result.status==='off_center'?null:result.grasp;}
+export function measureGrasp(a,item){return inspectGraspGeometry(a,item).grasp;}

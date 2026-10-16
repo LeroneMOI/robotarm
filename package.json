@@ -6,7 +6,8 @@
   "type": "module",
   "scripts": {
     "start": "node server.mjs",
-    "check": "node --check server.mjs && node --check dist/app.js"
+    "check": "node --check server.mjs && node --check dist/app.js",
+    "test": "node tests/unified-contact.test.mjs && node tests/oriented-grasp.test.mjs"
   },
   "engines": {
     "node": ">=18"
